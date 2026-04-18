@@ -215,7 +215,7 @@
 const CONFIG = {
   // Webhook URLs (fill in after creating n8n webhooks)
   WEBHOOKS: {
-    GET_PROJECTS:   'YOUR_N8N_WEBHOOK_URL/get-projects',
+    GET_PROJECTS:   'https://douthit.app.n8n.cloud/webhook/get-projects',
     UPDATE_PROJECT: 'YOUR_N8N_WEBHOOK_URL/update-project',
     UPLOAD_FILE:    'YOUR_N8N_WEBHOOK_URL/upload-file',
   },
@@ -311,13 +311,48 @@ async function loadProjects() {
   try {
     const res = await fetch(CONFIG.WEBHOOKS.GET_PROJECTS, { method: 'GET' });
     const data = await res.json();
-    projects = data;
+    // Map Airtable field names to the flat structure the UI expects
+    projects = data.map(record => mapAirtableRecord(record));
   } catch(e) {
-    // Fallback to sample data when webhooks aren't configured yet
+    console.warn('Webhook not reachable, using sample data');
     projects = getSampleProjects();
   }
   renderTabs();
   renderProjects();
+}
+
+function mapAirtableRecord(record) {
+  const f = record.fields;
+  const type = f['Project Type'] || 'Other';
+  // Phase I goes to employees, everything else goes to manager
+  const owner = type === 'Phase I' ? 'employee' : 'manager';
+  const statusRaw = (f['Status'] || 'New').toLowerCase();
+  // Map Airtable status values to internal status keys
+  const statusMap = { 'new': 'new', 'accepted': 'accepted', 'declined': 'declined', 'completed': 'completed' };
+  const status = statusMap[statusRaw] || 'new';
+  return {
+    id:              record.id,
+    address:         f['Subject Address'] || '—',
+    client:          f['Client Name'] || '—',
+    email:           f['Client Email'] || '—',
+    type:            type,
+    urgency:         f['Urgency'] || 'Normal',
+    notes:           f['Notes'] || '—',
+    received:        f['Date Received'] || record.createdTime,
+    subject:         f['Subject'] || '',
+    body:            f['Email Body'] || '—',
+    attachmentName:  f['Attachment']?.[0]?.filename || '',
+    attachmentUrl:   f['Attachment']?.[0]?.url || '',
+    status:          status,
+    owner:           f['Owner'] || owner,
+    acceptedBy:      f['Accepted By'] || null,
+    declinedBy:      f['Declined By'] || null,
+    reacceptPending: f['Reaccept Pending'] || false,
+    completedAt:     f['Completed At'] || null,
+    timeSpent:       f['Time Spent'] || null,
+    completedFile:   f['Completed File'] || null,
+    completedFileUrl:f['Completed File URL'] || null,
+  };
 }
 
 async function updateProject(id, fields) {
